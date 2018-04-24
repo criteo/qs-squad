@@ -23,9 +23,9 @@ SQUAD is a powershell tool that enable apps transport between two different Qlik
 The powershell's script Prepare.ps1 is run with a config file (csv) against the non-prod tenant. After that, folder Release.[Version] is created with Release.[Version].ps1 script inside, and can be run against production tenant. 
 
 The powershell's script work with a csv file as input, describe as follow: 
+
 | ENTITY | ACTION | ID_DEV | ID_PROD | PARAM |
 |--|--|--|--|--|
-||||||
 |Entity|**Transport** or **Delete**|id in staging env|id in production env| optional parameters |
 
 CSV file must be name as Prepare.[Version].csv
