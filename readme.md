@@ -24,9 +24,9 @@ The powershell's script Prepare.ps1 is run with a config file (csv) against the 
 
 The powershell's script work with a csv file as input, describe as follow: 
 
-| ENTITY | ACTION | ID_DEV | ID_PROD | PARAM |
-|--|--|--|--|--|
-|Entity|**Transport** or **Delete**|id in staging env|id in production env| optional parameters |
+| ENTITY   | ACTION                    | ID_DEV            | ID_PROD              | PARAM               |
+| -------- | ------------------------- | ----------------- | -------------------- | ------------------- |
+| Entity   |**Transport** or **Delete**| id in staging env | id in production env | optional parameters |
 
 CSV file must be name as Prepare.[Version].csv
 
