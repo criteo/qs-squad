@@ -91,6 +91,9 @@ The delete drop task, app, etc... You must enter the type of entity and the prod
 See also the list of  [contributors](https://github.com/criteo/qs-squad/graphs/contributors)  who participated in this project.
 
 
+## License
+This project is licensed under the Apache 2.0 license.
+
 
 ## Contributing
 
