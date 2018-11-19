@@ -1,9 +1,10 @@
-﻿# Last modification : 01/02/2018
+﻿# Last modification : 19/11/2018
 # By : Charley Beaudouin
-# Version : 3.0
+# Version : 5.2
 
 # GOLBAL PARAMS
 ##########################################################################################################
+$host.PrivateData.ErrorForegroundColor = "Red"
 
 #Params
 $XRFKEY = 'somerandomstring'
@@ -19,19 +20,30 @@ $logFile = New-Item -type file $PathFile -Force
 #Stop script when error
 $ErrorActionPreference = "Stop"
 
-#Server Source
-if ($currentScriptName -eq 'Prepare')
-{
-  $ServerIdentification = 'XXX'
-}
-#Server Destination
-if ($currentScriptName -eq 'Release')
-{
-  $ServerIdentification = 'XXX'
-}
+#Stop when app contains values
+$valuesToStop = @()
+#exemple : @("Lib","test", "Exit script")
 
-# Get Credentaials, add them to cache
-[Net.ServicePointManager]::ServerCertificateValidationCallback = {$true} #ignore ssl warning
+#Serveur Source
+$ServerIdentification = 'localhost'
+
+#Engine URL
+$Engineurl = [System.Uri]'wss://localhost/app/'
+
+#Bypass Certificates
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Unrestricted
+add-type @"
+        using System.Net;
+        using System.Security.Cryptography.X509Certificates;
+        public class TrustAllCertsPolicy : ICertificatePolicy {
+          public bool CheckValidationResult(
+            ServicePoint srvPoint, X509Certificate certificate,
+            WebRequest request, int certificateProblem) {
+            return true;
+          }
+        }
+"@
+[System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy 
 $cookiejar = New-Object System.Net.CookieContainer
 
 #Create Table
@@ -318,7 +330,7 @@ Function GetAllTask()
   AddLog("GetAllTask()")
   $url = "https://$ServerIdentification/qrs/Task/table?orderAscending=true&skip=0&sortColumn=name&xrfkey=$XRFKEY"
   $method = 'POST'
-  $body = '{"entity":"Task","columns":[{"name":"id","columnType":"Property","definition":"id"},{"name":"privileges","columnType":"Privileges","definition":"privileges"},{"name":"name","columnType":"Property","definition":"name"},{"name":"tags","columnType":"List","definition":"tag","list":[{"name":"name","columnType":"Property","definition":"name"},{"name":"id","columnType":"Property","definition":"id"}]},{"name":"compositeEvents","columnType":"Function","definition":"Count(CompositeEvent)"},{"name":"compositeEventRules","columnType":"Function","definition":"Count(CompositeEvent.Rule)"},{"name":"userDirectory.name","columnType":"Property","definition":"userDirectory.name"},{"name":"app.name","columnType":"Property","definition":"app.name"},{"name":"taskType","columnType":"Property","definition":"taskType"},{"name":"enabled","columnType":"Property","definition":"enabled"},{"name":"status","columnType":"Property","definition":"operational.lastExecutionResult.status"},{"name":"operational.lastExecutionResult.startTime","columnType":"Property","definition":"operational.lastExecutionResult.startTime"},{"name":"nextExecution","columnType":"Property","definition":"operational.nextExecution"}]}'
+  $body = '{"entity":"Task","columns":[{"name":"id","columnType":"Property","definition":"id"},{"name":"privileges","columnType":"Privileges","definition":"privileges"},{"name":"name","columnType":"Property","definition":"name"},{"name":"tags","columnType":"List","definition":"tag","list":[{"name":"name","columnType":"Property","definition":"name"},{"name":"id","columnType":"Property","definition":"id"}]},{"name":"compositeEvents","columnType":"Function","definition":"Count(CompositeEvent)"},{"name":"compositeEventRules","columnType":"Function","definition":"Count(CompositeEvent.Rule)"},{"name":"userDirectory.name","columnType":"Property","definition":"userDirectory.name"},{"name":"app.id","columnType":"Property","definition":"app.id"},{"name":"app.name","columnType":"Property","definition":"app.name"},{"name":"taskType","columnType":"Property","definition":"taskType"},{"name":"enabled","columnType":"Property","definition":"enabled"},{"name":"status","columnType":"Property","definition":"operational.lastExecutionResult.status"},{"name":"operational.lastExecutionResult.startTime","columnType":"Property","definition":"operational.lastExecutionResult.startTime"},{"name":"nextExecution","columnType":"Property","definition":"operational.nextExecution"}]}'
   $result = WebRequestCall $url $method $body
   $outputObject= $result | ConvertFrom-Json
   return $outputObject
@@ -429,6 +441,17 @@ Function DeleteEntity($entity, $idEntity)
   $url = "https://$ServerIdentification/qrs/$entity/"+$idEntity+"?xrfkey=$XRFKEY"
   $method = "DELETE"
   $body = $null
+  WebRequestCall $url $method $body  
+}
+
+#/qrs/task/{id}/stop
+#Stop the reload task using id
+Function StopReloadTask($idEntity)
+{ 
+  AddLog("StopReloadTask $entity $idEntity")  
+  $url = "https://$ServerIdentification/qrs/task/"+$idEntity+"/stop?xrfkey=$XRFKEY"
+  $method = "POST"
+  $body = ''
   WebRequestCall $url $method $body  
 }
 
@@ -644,6 +667,14 @@ Function UpdateReloadTaskWithTag($entity, $idEntityFromTagCheck, $paramEntity, $
   $paramEntityObject.task | Add-Member -MemberType NoteProperty -Name "id" -Value $idEntityFromTagCheck
   $paramEntityObject.task= PrepareTagForCreateUpdate $paramEntityObject.task $tag  
   $paramEntityObject.task | Add-Member -MemberType NoteProperty -Name "modifiedDate" -Value $theDate.ToUniversalTime().ToString( "yyyy-MM-ddTHH:mm:ss.fffZ" )
+  
+  $oldInformations = GetInformations 'reloadtask' $idEntityFromTagCheck
+  $oldInformationsString  = $oldInformations | ConvertTo-Json -Depth 5
+  #$oldInformationsString  | Out-File "$vPathRepertoryScript\oldInformationsString.txt"
+  $paramEntityObjectString  = $paramEntityObject | ConvertTo-Json -Depth 5
+  #$paramEntityObjectString  | Out-File "$vPathRepertoryScript\paramEntityObjectString.txt"
+  $paramEntityObject.task | Add-Member -MemberType NoteProperty -Name "operational" -Value $oldInformations.operational
+  
   $paramEntityObject.schemaEvents | Foreach-Object{
     $reloadTask = @{}
     $reloadTask.id = $idEntityFromTagCheck
@@ -655,7 +686,7 @@ Function UpdateReloadTaskWithTag($entity, $idEntityFromTagCheck, $paramEntity, $
     $_ | Add-Member -MemberType NoteProperty -Name "reloadTask" -Value $reloadTask
   }
   $paramEntityJson = $paramEntityObject | ConvertTo-Json -Depth 6
-  $paramEntityJson | Out-File "$vPathRepertoryScript\ModifyTask.txt"
+  #$paramEntityJson | Out-File "$vPathRepertoryScript\ModifyTask.txt"
   $url = "https://$ServerIdentification/qrs/reloadtask/update?xrfkey=$XRFKEY"
   $method = 'POST'
   $result = webRequestCall $url $method $paramEntityJson
@@ -754,6 +785,50 @@ Function CheckNameWithinEntites($entity, $nameEntity){
   }
 }
 
+#Function that check all the task linked to the appId and stop it if it's reloading
+Function checkAppReloadAndStop($idEntity){
+  AddLog "checkAppReloadAndStop($idEntity)"
+  $listAllIdObject = GetAllDispatcher "ReloadTask"
+  $informationsString  = $listAllIdObject | ConvertTo-Json -Depth 5
+  $listAllId = $listAllIdObject.rows
+  #$informationsString  | Out-File "$vPathRepertoryScript\informationsString.txt"
+  foreach ($current in $listAllId)
+  {
+    AddLog $current[7];
+    AddLog $current[11];
+    #Status 2 = reloading
+    if ($current[7] -eq $idEntity -and $current[11] -eq 2)
+    {
+      AddLog($idEntity+' task is currently reloading so we stop it.')
+      StopReloadTask $current[0]
+      $waitTaskStopped =$true
+      $ts = New-TimeSpan -Minutes 5
+      $waitUntil = (Get-Date) + $ts
+      #here
+      Do{    
+        $currentDate = Get-Date
+        If($currentDate -gt $waitUntil){
+          $error='ERROR : unable to stop Reload Task '+$current[0]+' in order to transport App '+$idEntity
+          throw $error
+        }
+        
+        Start-Sleep -s 5
+        
+        $AllTaskInfosDeeper = GetAllDispatcher "ReloadTask"
+        $listAllIdDeeper = $AllTaskInfosDeeper.rows
+        foreach ($currentDeeper in $listAllIdDeeper){
+          if ($current[0] -eq $currentDeeper[0]){
+            If($currentDeeper[11] -eq 6){
+              $waitTaskStopped = $false
+            }
+          }
+        }
+
+      }while($waitTaskStopped)
+    }
+  }
+}
+
 #Function that clear all entities not used
 Function ClearEntity($entity)
 {
@@ -847,7 +922,20 @@ Function AddLineTransport($entity, $action, $idOrigin, $param)
   }
   $informations = GetInformations $entity $idOrigin
   $informationsString  = $informations | ConvertTo-Json -Depth 5
+  $informationsName = $informations.name;
   #$informationsString  | Out-File "$vPathRepertoryScript\informationsString.txt"
+
+  if ($informationsName -like '*DEV*') {
+    $textError = “ERROR : $entity $idOrigin is a DEV Entity : $informationsName”
+    throw $textError
+  }
+  if ($entity -eq 'ReloadTask') {
+    $appReloadedByReloadTask = $informations.app.name;
+    if ($appReloadedByReloadTask -like '*DEV*') {
+      $textError = “ERROR : $entity $idOrigin reload a DEV application called : $appReloadedByReloadTask”
+      throw $textError
+    }
+  }
 
   $jsonCreateUpdate = PrepareJsonCreateUpdate $entity $informations $param
   $jsonCreateUpdateString  = $jsonCreateUpdate | ConvertTo-Json -Depth 5
@@ -1034,9 +1122,16 @@ Function AddLineTransportApp($entity, $action, $idOrigin){
     $textError = “ERROR : $entity $idOrigin do not exist”
     throw  $textError
   }
+  CheckExitScriptAndLibInsideScript $idOrigin
   $informations = GetInformations $entity $idOrigin
   $jsonCreateUpdate = PrepareJsonCreateUpdate $entity $informations
   $jsonCreateUpdateString  = $jsonCreateUpdate | ConvertTo-Json -Depth 5
+
+  $informationsName = $informations.name;
+  if ($informationsName -like '*DEV*') {
+    $textError = “ERROR : $entity $idOrigin is a DEV Entity : $informationsName”
+    throw $textError
+  }
 
   $filename = DownloadApp $idOrigin
 
@@ -1091,6 +1186,11 @@ Function ImportReplacePublishApp($id, $name, $filename, $paramEntity){
     } 
 
     $informationsNewApp = ImportApp $name $filename
+
+    
+    #check if a task linked to the app is in reload process
+    CheckAppReloadAndStop $idEntityFromTagCheck
+
 
     #replace app
     ReplaceApp $informationsNewApp.id $idEntityFromTagCheck
@@ -1257,6 +1357,8 @@ Function WebRequestCall($url, $method, $body)
   return $output
 }
 
+
+
 #Function that download a file from an url
 Function DownloadFile($url, $targetFile)
 { 
@@ -1300,6 +1402,190 @@ Function GetCSVFile($reg){
   }else{
     return $files[0].Name
   }  
+}
+
+
+# Websocket Engine Request Class
+##########################################################################################################
+
+#Object used to request the Qlik Sense engine
+#Use websockets
+class QlikEngineConnection {
+
+    [System.Net.WebSockets.ClientWebSocket]$WebSocket
+    [System.Threading.CancellationToken]$CT
+    [bool]$Connected
+    [int]$id
+
+    #Instantiate a new websocket using the cookie that contain the informations of identification
+    QlikEngineConnection($cookiejar) {
+        AddLog "Initialise new QlikEngineConnection"
+        $this.WebSocket = New-Object System.Net.WebSockets.ClientWebSocket
+        $this.WebSocket.Options.Cookies = $cookiejar
+        $this.CT = New-Object System.Threading.CancellationToken
+        $this.id=0
+    }
+
+    #Connect the websocket to the server using the url
+    [void]Connect($url) {    
+        WriteAndLog "Connecting to Qlik Engine"            
+        $Conn = $this.WebSocket.ConnectAsync($url, $this.CT)
+        While (!$Conn.IsCompleted) {
+            WriteAndLog "Connecting..."
+            Start-Sleep -Milliseconds 100 
+        }
+        
+        if ($Conn.IsFaulted) {
+          WriteAndLog $Conn.Exception
+        }
+        
+        if ($this.WebSocket.State -eq [System.Net.WebSockets.WebSocketState]::Closed) {
+            WriteAndLog "Connection closed by the server"
+        } else {
+            WriteAndLog "Connected to $($url)"
+            #Two operations are mandatory
+            $this.Receive() 
+            $this.Receive()
+        }
+        $this.Connected = $true
+    }
+
+    #Receive data from the websocket that is transcripted to Json
+    [PSCustomObject] Receive() {
+        AddLog "Receive from Qlik Engine API"
+        $Size = 1024
+        $Array = [byte[]] @(,0) * $Size
+        $Recv = New-Object System.ArraySegment[byte] -ArgumentList @(,$Array)
+        $ms = New-Object System.IO.MemoryStream
+    
+        Do {
+            $Conn = $this.WebSocket.ReceiveAsync($Recv, $this.CT)
+            While (!$Conn.IsCompleted) { Start-Sleep -Milliseconds 100 }
+            $ms.Write($Recv.Array, 0, $Conn.Result.Count)
+            
+        } Until ($Conn.Result.EndOfMessage)
+        
+        $ms.Seek(0, [System.IO.SeekOrigin]::Begin);
+        
+        $reader = New-Object System.IO.StreamReader($ms, [System.Text.Encoding]::UTF8)
+        $result = $reader.ReadToEnd()
+        AddLog "Response : "
+        AddLog $result
+        
+        $jsObject = ConvertFrom-Json $result
+        return $jsObject
+    }
+
+    [PSCustomObject] Send($method) {
+       [int] $handle = -1
+       $params =@()
+       $Timeout=30
+       return $This.Send($method, $handle, $params, $Timeout)
+    }
+
+    [PSCustomObject] Send($method, $handle) {
+       $params =@()
+       $Timeout=30
+       return $This.Send($method, $handle, $params, $Timeout)
+    }
+
+    [PSCustomObject] Send($method, $handle, $params) {
+       $Timeout=30
+       return $This.Send($method, $handle, $params, $Timeout)
+    }
+
+    #Send informations to the Qlik Sense Engine in order to get a response
+    #$method : name of the method such as "OpenDoc"
+    #$handle : -1 in the global context. 1 engine session is bound to a particular app.
+    #$params : Json used to perform the request
+    #$Timeout : Nb of seconds before sending an error. 30 by default.
+    [PSCustomObject] Send($method, $handle, $params, $Timeout) { 
+        AddLog "Send to Qlik Engine API $method"
+        If (!($this.WebSocket -is [System.Net.WebSockets.ClientWebSocket])){
+            $error = 'No connection via WebSocket.'
+            throw $error
+        }
+    
+        $Prop = @{"jsonrpc" = "2.0";
+                  "id" = $this.id;
+                  "handle" = $handle;
+                  "method" = $method;
+                  "params" = $params}
+        $Msg = $Prop | ConvertTo-Json -Compress -Depth 10
+                
+        Write-Host $Msg
+        
+        $this.id++
+    
+        $Array = @()
+        $Encoding = [System.Text.Encoding]::UTF8
+        $Array = $Encoding.GetBytes($Msg)
+               
+        $Msg = New-Object System.ArraySegment[byte]  -ArgumentList @(,$Array)
+    
+        $Conn = $this.WebSocket.SendAsync($Msg, [System.Net.WebSockets.WebSocketMessageType]::Text, [System.Boolean]::TrueString, $this.CT)
+        $ConnStart = Get-Date
+    
+        While (!$Conn.IsCompleted) { 
+            $TimeTaken = ((get-date) - $ConnStart).Seconds
+            If ($TimeTaken -gt $Timeout) {
+                $error = "Message took longer than $Timeout seconds and may not have been sent."
+                throw $error
+            }
+            Start-Sleep -Milliseconds 100 
+        }
+        
+        return $this.Receive()
+    }
+
+    #Disconnect the websocket
+    [void]Disconnect() {   
+        AddLog "Disconnect to Qlik Engine API" 
+        [System.Net.WebSockets.WebSocketCloseStatus]$Reason = [System.Net.WebSockets.WebSocketCloseStatus]::NormalClosure
+        #$cs = [System.Net.WebSockets.WebSocketCloseStatus]::NormalClosure
+        $cts = New-Object System.Threading.CancellationTokenSource
+        $this.WebSocket.CloseAsync($Reason, 'Closing connection', $cts.Token)
+        $this.Connected = $false
+    }
+}
+
+#Function that check inside app script if some text that could lead to release problems appears
+# for instance there souldn't be any 'Exit Script' inside the script
+Function CheckExitScriptAndLibInsideScript($idApp){
+  AddLog "CheckExitScriptAndLibInsideScript" 
+ 
+  #get informations
+  $engConn = [QlikEngineConnection]::new($cookiejar)
+  $engConn.Connect($Engineurl)
+  $result = $engConn.Send("OpenDoc", -1, @($idApp))
+  $result | ConvertTo-Json -Depth 10
+  If([bool]($result.PSobject.Properties.name -match "error")){
+    If($result.error.code -eq 403){
+      $error = “ERROR : You don't have the rights to access to the application through the HUB. Please try to connect to the $idApp to throught the hub to check if you have the rights.” 
+      throw $error
+    }else{
+      $error = “ERROR : while connecting to $idApp, code : "+$result.error.code+”, parameter : "+$result.error.parameter+”, message : "+$result.error.message
+      throw $error
+    }
+  }
+  $handle = $result.result.qReturn.qHandle
+  $result = $engConn.Send("GetScript", $handle)
+  $script = $result.result.qScript 
+  $engConn.Disconnect()
+  $engConn=$null
+
+  #Check existance of the values
+  foreach ($textToStop in $valuesToStop){
+    WriteAndLog $valuesToStop
+    $Matches = Select-String -InputObject $script -Pattern $textToStop -AllMatches
+    $nbExitScript = $Matches.Matches.Count
+    If($nbExitScript -gt 0){
+      $error = “ERROR : App "+$idApp+" contains an $textToStop” 
+      throw $error
+    }else{
+      WriteAndLog 'ok'
+    }
+  }
 }
 
 # Program launch

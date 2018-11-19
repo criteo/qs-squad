@@ -1,22 +1,15 @@
 ## Introduction
-SQUAD is a powershell tool that enable apps transport between two different Qlik Sense instance. This is useful for testing Qlik configuration on a sandbox 
+SQUAD is a powershell tool that enable transport between two different Qlik Sense instance. This is useful for transporting applications and QMC configuration from development to production.
 
 
 ## Prerequisites :
 
  - The user that start SQUAD must have licence and rights in order to use Qlik Sense. 
- - Modify Prepare program in order to set the right servers URL. 
- - Production Server site : Tag all apps, Streams, Data Connections, ReloadTask with the corresponding Dev id of the entity.    You can use IdGetter, IdMerger et IdInsertInsideTags in order to help this insert.
+ - At least Powershell 3.0
+ - Production Server site : Tag all apps, Streams, Data Connections, ReloadTask with the corresponding Dev id of the entity.    
+   You can use IdGetter, IdMerger et IdInsertInsideTags in order to help this insert. (See the section bellow ID Setting)
  - Authentication is made with AD strategy (UseDefaultCredentials)
- - Instance must be set under Prepare.ps1: 
-	- Server Source:      $ServerIdentification
-	- Server Destination: $ServerIdentification
-
-
-### /!\ ACHTUNG :
-- There might be a bug in the QMC with the display of reload task using SQUAD. This bug is known and reported to Qlik. Sometimes Task Status, Last execution and Next execution is shown as "never refresh" but the task is actually working.
-- Transport applications with SQUAD should not be done when applications are reloading.
-
+ - Values not allowed into script should be set under Prepare.ps1: valuesToStop
 
 ## How it's work :
 
@@ -83,7 +76,31 @@ The delete drop task, app, etc... You must enter the type of entity and the prod
 	Tag|Delete|||TagNameToDelete
 	Tag|Clear|||
 
+### Id setting :
+Tag with dev Ids must be set and created for all production objects before using SQUAD.
+The purpose of tagging is to automatically match the objects between two sites, therefore SQUAD can automatically replace the right object.
 
+| ENTITY         | NAME         | ENVIRONMENT | ID                                   | TAG                                  | 
+| --------       | ------------ | ----------- | ------------------------------------ | ------------------------------------ | 
+| App            | TESTAPP      | DEV         | a7ac4057-2663-4662-9a6b-204edf3bc527 |                                      | 
+| App            | TESTAPP      | PROD        | a4ce46bd-1df8-4e2a-ada9-968424e03697 | a7ac4057-2663-4662-9a6b-204edf3bc527 | 
+| SystemRule     | TESTRULE     | DEV         | de37932e-4b1f-450a-8032-2c90ebffd59c |                                      | 
+| SystemRule     | TESTRULE     | PROD        | a5de4e5f-05f5-4273-8fc0-ffd84c937d0e | de37932e-4b1f-450a-8032-2c90ebffd59c | 
+| DataConnection | TESTDATACONN | DEV         | d33f4820-99c8-43a6-8202-91256165474f |                                      | 
+| DataConnection | TESTDATACONN | PROD        | 4b57fd50-d043-495f-96ec-0fd67485c40c | d33f4820-99c8-43a6-8202-91256165474f | 
+| Stream         | TESTSTREAM   | DEV         | 3b394523-f546-4730-bb3b-457b1b71425d |                                      | 
+| Stream         | TESTSTREAM   | PROD        | 416cca09-b178-4ff4-9491-629f818084f1 | 3b394523-f546-4730-bb3b-457b1b71425d | 
+
+In order to help you setting the object before using SQUAD for the first time, you can use use IdGetter.ps1, IdMerger.ps1 and IdInsertInsideTags.ps1 that will help you setting the tags in the production site.
+IdGetter will get all ids inside both sites development and production.
+IdMerger will help matching the ids between development and production.
+IdInsertInsideTags will help to insert tags ids into production.
+
+
+### Corrections :
+- "never refresh" display on QMC bug corrected.
+- Transport applications with SQUAD could be done when applications are reloading, task are stopped.
+	
 ## Authors
 
 -   **Charley Beaudouin**  -  _Initial work_  -  [Criteo](https://github.com/criteo/qs-squad)
